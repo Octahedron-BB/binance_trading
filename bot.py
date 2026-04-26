@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# 初始化交易所連線
 exchange_testnet = ccxt.binance({
     'apiKey': os.getenv('BINANCE_API_KEY'),
     'secret': os.getenv('BINANCE_SECRET_KEY'),
@@ -18,6 +19,7 @@ exchange_testnet.set_sandbox_mode(True)
 
 exchange_mainnet = ccxt.binance({'enableRateLimit': True})
 
+# 交易執行邏輯
 def execute_trade(signal, symbol, current_price):
     try:
         balance = exchange_testnet.fetch_balance()
@@ -70,6 +72,7 @@ def check_signals(df, symbol):
     current = df.iloc[-1]
     prev = df.iloc[-2]
     
+    # 週末濾網判定 (UTC時間的六、日: 0是週一, 5是週六, 6是週日)
     now_utc = datetime.datetime.now(datetime.UTC)
     is_weekend = now_utc.weekday() in [5, 6] 
     allow_entry = True
@@ -102,6 +105,7 @@ if __name__ == "__main__":
         balance = exchange_testnet.fetch_balance()
         print(f"✅ 測試網帳戶驗證成功！目前餘額: {balance['total'].get('USDT', 0):.2f} USDT\n")
         
+# 掃描目標幣種並執行策略
         target_symbols = ['BTC/USDT', 'PAXG/USDT']
         
         for symbol in target_symbols:
