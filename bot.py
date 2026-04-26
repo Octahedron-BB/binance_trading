@@ -3,12 +3,16 @@ import pandas as pd
 import pandas_ta as ta
 import requests
 import os
+import time
+import schedule
 import datetime
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# 初始化交易所連線
+# ================= 連線與參數初始化 =================
+
+# 1. 執行專用 (Testnet)
 exchange_testnet = ccxt.binance({
     'apiKey': os.getenv('BINANCE_API_KEY'),
     'secret': os.getenv('BINANCE_SECRET_KEY'),
@@ -17,45 +21,22 @@ exchange_testnet = ccxt.binance({
 })
 exchange_testnet.set_sandbox_mode(True) 
 
+# 2. 數據專用 (Mainnet)
 exchange_mainnet = ccxt.binance({'enableRateLimit': True})
 
-# 交易執行邏輯
-def execute_trade(signal, symbol, current_price):
+# 3. 策略常數
+PORTFOLIO_RATIO = float(os.getenv('PORTFOLIO_RATIO', 0.5))
+INVESTMENT_RATIO = float(os.getenv('INVESTMENT_RATIO', 0.7))
+
+# ================= 核心組件 =================
+
+def send_telegram_notification(msg):
+    token = os.getenv('TG_BOT_TOKEN')
+    chat_id = os.getenv('TG_CHAT_ID')
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
     try:
-        balance = exchange_testnet.fetch_balance()
-        usdt_free = balance['free'].get('USDT', 0)
-        
-        coin_name = symbol.split('/')[0]
-        coin_free = balance['free'].get(coin_name, 0)
-
-        p_ratio = float(os.getenv('PORTFOLIO_RATIO', 0.5))
-        i_ratio = float(os.getenv('INVESTMENT_RATIO', 0.7))
-
-        if signal == "LONG_ENTRY":
-            total_equity = balance['total'].get('USDT', 0)
-            buy_amount_usdt = total_equity * p_ratio * i_ratio
-            
-            if usdt_free < buy_amount_usdt:
-                print(f"⚠️ 餘額不足。需要: {buy_amount_usdt:.2f}, 現有: {usdt_free:.2f}")
-                return None
-
-            print(f"🚀 執行買入：以市價購買約 {buy_amount_usdt:.2f} USDT 的 {symbol}")
-            order = exchange_testnet.create_market_buy_order(symbol, buy_amount_usdt, params={'quoteOrderQty': buy_amount_usdt})
-            return order
-
-        elif signal == "LONG_EXIT":
-            if coin_free <= 0:
-                print(f"ℹ️ 目前未持有 {coin_name}，無需執行出場。")
-                return None
-            
-            print(f"📉 執行賣出：全倉市價賣出 {coin_free} 個 {symbol}")
-            order = exchange_testnet.create_market_sell_order(symbol, coin_free)
-            return order
-
-    except Exception as e:
-        print(f"❌ 交易執行失敗 ({symbol}): {e}")
-        return None
-
+        requests.post(url, json={"chat_id": chat_id, "text": msg, "parse_mode": "HTML"}, timeout=10)
+    except: pass
 
 def fetch_and_analyze(symbol, timeframe='1d', limit=250):
     bars = exchange_mainnet.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
@@ -72,66 +53,91 @@ def check_signals(df, symbol):
     current = df.iloc[-1]
     prev = df.iloc[-2]
     
-    # 週末濾網判定 (UTC時間的六、日: 0是週一, 5是週六, 6是週日)
+    # 週末濾網判定 (僅 PAXG 適用)
     now_utc = datetime.datetime.now(datetime.UTC)
-    is_weekend = now_utc.weekday() in [5, 6] 
-    allow_entry = True
+    is_weekend = now_utc.weekday() in [5, 6]
     
-    if symbol == 'PAXG/USDT' and is_weekend:
-        allow_entry = False
-        print("⏳ [週末濾網生效] PAXG 週末不執行新進場。")
-
     macro_bull = current['close'] > current['ema200']
     cond_a = (prev['hist'] <= 0 and current['hist'] > 0) and (current['close'] > current['ema30'])
     cond_b = (prev['close'] <= prev['ema30'] and current['close'] > current['ema30']) and (current['hist'] > 0)
     
-    long_condition = (cond_a or cond_b) and macro_bull and allow_entry
-    exit_condition = (current['hist'] < 0) or (current['close'] < current['ema30'])
-    
-    if long_condition: return "LONG_ENTRY"
-    if exit_condition: return "LONG_EXIT"
+    # 出場邏輯
+    if current['hist'] < 0 or current['close'] < current['ema30']:
+        return "LONG_EXIT"
+        
+    # 進場邏輯 (含週末濾網)
+    if (cond_a or cond_b) and macro_bull:
+        if symbol.startswith("PAXG") and is_weekend:
+            print(f"⏳ {symbol} 觸發進場訊號，但因週末濾網略過。")
+            return "HOLD"
+        return "LONG_ENTRY"
+        
     return "HOLD"
 
-def send_telegram_notification(msg):
-    token = os.getenv('TG_BOT_TOKEN')
-    chat_id = os.getenv('TG_CHAT_ID')
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    try:
-        requests.post(url, json={"chat_id": chat_id, "text": msg, "parse_mode": "HTML"}, timeout=10)
-    except: pass
-
-if __name__ == "__main__":
+def execute_trade(signal, symbol):
     try:
         balance = exchange_testnet.fetch_balance()
-        print(f"✅ 測試網帳戶驗證成功！目前餘額: {balance['total'].get('USDT', 0):.2f} USDT\n")
+        coin_name = symbol.split('/')[0]
         
-# 掃描目標幣種並執行策略
-        target_symbols = ['BTC/USDT', 'PAXG/USDT']
-        
-        for symbol in target_symbols:
-            print(f"--- 開始處理 {symbol} ---")
-            try:
-                data = fetch_and_analyze(symbol)
-                signal = check_signals(data, symbol)
-                latest_price = data.iloc[-1]['close']
-                
-                print(f"當前訊號: {signal}")
+        if signal == "LONG_ENTRY":
+            # 以當前 USDT 總餘額計算下單量
+            usdt_total = balance['total'].get('USDT', 0)
+            buy_amount_usdt = usdt_total * PORTFOLIO_RATIO * INVESTMENT_RATIO
+            print(f"🚀 執行買入 {symbol}: 約 {buy_amount_usdt} USDT")
+            order = exchange_testnet.create_market_buy_order(symbol, buy_amount_usdt, params={'quoteOrderQty': buy_amount_usdt})
+            return order
 
-                if signal == "LONG_ENTRY":
-                    order = execute_trade(signal, symbol, latest_price)
-                    if order:
-                        send_telegram_notification(f"🟢 <b>已執行買入</b>\n標的: {symbol}\n均價: {latest_price:.2f}")
-                elif signal == "LONG_EXIT":
-                    order = execute_trade(signal, symbol, latest_price)
-                    if order:
-                        send_telegram_notification(f"🔴 <b>已執行賣出</b>\n標的: {symbol}\n均價: {latest_price:.2f}")
-                else:
-                    print("目前無訊號，系統待機中。")
-                    
-            except Exception as e:
-                print(f"⚠️ {symbol} 處理發生錯誤 (測試網可能無此幣種): {e}")
-            
-            print("\n")
-            
+        elif signal == "LONG_EXIT":
+            coin_free = balance['free'].get(coin_name, 0)
+            if coin_free > 0:
+                print(f"📉 執行賣出 {symbol}: 全倉市價賣出 {coin_free}")
+                order = exchange_testnet.create_market_sell_order(symbol, coin_free)
+                return order
     except Exception as e:
-        print(f"系統運行錯誤: {e}")
+        print(f"❌ 交易執行失敗: {e}")
+    return None
+
+# ================= 任務分派 =================
+
+def run_strategy():
+    now = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M:%S")
+    print(f"\n⏰ [{now} UTC] 定時任務啟動：開始掃描標的...")
+    
+    targets = ['BTC/USDT', 'PAXG/USDT']
+    
+    for symbol in targets:
+        try:
+            df = fetch_and_analyze(symbol)
+            signal = check_signals(df, symbol)
+            price = df.iloc[-1]['close']
+            
+            print(f" > {symbol} 判斷結果: {signal}")
+            
+            if signal == "LONG_ENTRY":
+                if execute_trade(signal, symbol):
+                    send_telegram_notification(f"🟢 <b>【已執行買入】</b>\n標的: {symbol}\n價格: {price:.2f}")
+            elif signal == "LONG_EXIT":
+                if execute_trade(signal, symbol):
+                    send_telegram_notification(f"🔴 <b>【已執行賣出】</b>\n標的: {symbol}\n價格: {price:.2f}")
+        except Exception as e:
+            print(f"❌ 處理 {symbol} 時發生錯誤: {e}")
+
+# ================= 啟動循環 =================
+
+if __name__ == "__main__":
+    print("🤖 量化機器人已啟動，進入 24 小時守候模式...")
+    send_telegram_notification("🤖 <b>量化機器人上線成功！</b>\n系統已進入 24 小時監控模式，將於每日日線收盤後自動執行。")
+
+    # 設定每天 UTC 00:01 執行一次 (對應台北時間 08:01)
+    # 大多數 VPS 的系統時間都是 UTC，所以設定 00:01 是標準做法
+    schedule.every().day.at("00:01").do(run_strategy)
+
+    # 為了方便你部署後立刻看到效果，我們可以手動先跑一次
+    # run_strategy() 
+
+    while True:
+        schedule.run_pending()
+        # 每分鐘印出一次心跳日誌，確保程式沒掛掉
+        if datetime.datetime.now().minute == 0:
+            print(f"💓 系統正常運行中... 當前時間: {datetime.datetime.now().strftime('%H:%M')}")
+        time.sleep(60)
