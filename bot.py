@@ -27,12 +27,12 @@ exchange_testnet.set_sandbox_mode(True)
 PORTFOLIO_RATIO = float(os.getenv('PORTFOLIO_RATIO', 0.5))    # 拿出多少總資產跑策略
 INVESTMENT_RATIO = float(os.getenv('INVESTMENT_RATIO', 0.7)) # 策略預算中，每次進場的比例
 BTC_WEIGHT = float(os.getenv('BTC_WEIGHT', 0.5))             # BTC 預算權重
-PAXG_WEIGHT = float(os.getenv('PAXG_WEIGHT', 0.5))           # PAXG 預算權重
+XAUT_WEIGHT = float(os.getenv('XAUT_WEIGHT', 0.5))           # XAUT 預算權重
 
 # 交易對映射與權重
 TRADING_CONFIG = {
     "BTC=F": {"symbol": "BTC/USDT", "weight": BTC_WEIGHT},
-    "GC=F":  {"symbol": "PAXG/USDT", "weight": PAXG_WEIGHT}
+    "GC=F":  {"symbol": "XAUT/USDT", "weight": XAUT_WEIGHT}
 }
 
 # Telegram 配置
@@ -167,8 +167,8 @@ def run_strategy():
 
 if __name__ == "__main__":
     start_msg = "🤖 <b>CME/COMEX 雙腦機器人已啟動</b>\n"
-    start_msg += f"監控標的: BTC & PAXG\n"
-    start_msg += f"預算權重: {BTC_WEIGHT*100}% / {PAXG_WEIGHT*100}%\n"
+    start_msg += f"監控標的: BTC & XAUT\n"
+    start_msg += f"預算權重: {BTC_WEIGHT*100}% / {XAUT_WEIGHT*100}%\n"
     start_msg += "掃描時間: 每日 23:00 UTC"
     
     print("🤖 機器人進入循環監控模式...")
