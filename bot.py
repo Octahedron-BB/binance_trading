@@ -142,8 +142,15 @@ def run_strategy():
             
             target_buy_usdt = total_strategy_budget * weight
             
+            # 提取技術指標數值 (用於日誌)
+            price = current['close']
+            ema30 = current['ema30']
+            ema200 = current['ema200']
+            macd_hist = current['hist']
+
             report_segment = f"🔹 <b>{symbol}</b> (大腦: {ticker})\n"
-            report_segment += f"• 期貨價: <code>{current['close']:,.2f}</code> | Hist: <code>{current['hist']:.2f}</code>\n"
+            report_segment += f"• 期貨價: <code>{price:,.2f}</code> | Hist: <code>{macd_hist:.2f}</code>\n"
+            report_segment += f"• 均線指標: EMA30: <code>{ema30:,.2f}</code> | EMA200: <code>{ema200:,.2f}</code>\n"
             report_segment += f"• 分配預算: <code>{target_buy_usdt:,.2f} USDT</code>\n"
 
             trade_status = "😴 當前狀態: 觀望"
