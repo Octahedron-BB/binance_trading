@@ -52,7 +52,7 @@ def fetch_market_data(yahoo_ticker):
     """獲取期貨大腦數據 (CME/COMEX)"""
     ticker = yf.Ticker(yahoo_ticker)
     # 抓取 1 年份的日線數據
-    df = ticker.history(period="1y", interval="1d")
+    df = ticker.history(period="max", interval="1d")
     df.reset_index(inplace=True)
     df.rename(columns={'Date': 'timestamp', 'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume'}, inplace=True)
     
