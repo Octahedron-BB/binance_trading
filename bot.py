@@ -56,6 +56,12 @@ def fetch_market_data(yahoo_ticker):
     df.reset_index(inplace=True)
     df.rename(columns={'Date': 'timestamp', 'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume'}, inplace=True)
     
+    # 剔除未收盤數據
+    now_utc_data = datetime.datetime.now(datetime.UTC).date()
+    last_candle_date = df['timestamp'].iloc[-1].date()
+    if last_candle_date > now_utc_data:
+        df = df.iloc[:-1]
+        
     # 計算指標
     df.ta.ema(length=30, append=True)
     df.ta.ema(length=200, append=True)
