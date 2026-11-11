@@ -155,7 +155,9 @@ cython_debug/
 # macOS
 .DS_Store
 
-# Brainstorm notes, local backtest cache & generated reports
+# Brainstorm notes, local backtest cache, bot runtime state & generated reports
 .brainstorm-notes/
 .backtest_cache/
+.bot_state.json
+.bot_state.tmp
 reports/
