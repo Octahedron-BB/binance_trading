@@ -21,8 +21,9 @@ BINANCE_API_KEY=your_api_key
 BINANCE_SECRET_KEY=your_secret_key
 TG_BOT_TOKEN=your_telegram_bot_token
 TG_CHAT_ID=your_telegram_chat_id
-PORTFOLIO_RATIO=0.5
-INVESTMENT_RATIO=0.7
+DEPLOY_RATIO=0.7
+BTC_WEIGHT=0.5
+XAUT_WEIGHT=0.5
 ```
 
 ### 2. 本地執行
@@ -39,12 +40,15 @@ docker build -t binance-bot .
 docker run -d --env-file .env binance-bot
 ```
 
-## 📈 交易策略簡介
-- **進場條件 (LONG)**：
-  - 價格高於 EMA 200 (長期牛市趨勢)。
-  - MACD 柱狀圖由負轉正 且 價格高於 EMA 30。
-- **出場條件 (EXIT)**：
-  - MACD 柱狀圖轉負 或 價格跌破 EMA 30。
+## 📈 交易策略簡介 (v3b)
+- **資金配置**：依帳戶總淨值（USDT + 持倉市值）保留 30% 現金備用，剩餘 70%（`DEPLOY_RATIO=0.7`）按 50/50 分配給 BTC 與 XAUT（各佔總淨值 35%）。
+- **BTC/USDT (`BTC=F` 訊號大腦 — `ema30_macd`)**：
+  - 進場：`價格 > EMA200` 且 (`MACD` 柱狀圖金叉 + `價格 > EMA30` 或 價格上穿 `EMA30` + `MACD > 0`)。
+  - 出場：`MACD` 柱狀圖轉負 或 價格跌破 `EMA30`。
+- **XAUT/USDT (`GC=F` 訊號大腦 — `ema200_macd_both_exit`)**：
+  - 進場：`價格 > EMA200` 且 `MACD` 柱狀圖 `> 0`。
+  - 出場：必須同時 `價格 < EMA200` 且 `MACD` 柱狀圖 `< 0` 雙重確認才離場。
+- **排程與時區**：每日 `23:00 UTC` 掃描執行，週末休市略過，並過濾美股假期重複舊 K 線。
 
 ## ⚖️ 免責聲明
 本專案僅供學習與研究使用，投資有風險，使用自動化交易程式請謹慎評估並自行承擔風險。
